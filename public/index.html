@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Call</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background-color: #f0f0f0;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+    }
+
+    #videoContainer {
+      position: relative;
+      width: 80%;
+      /* Adjust the width as needed */
+      max-width: 800px;
+      height: 450px;
+      /* Adjust the height as needed */
+      background-color: #000;
+    }
+
+    video {
+      position: absolute;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+
+    #remoteVideo {
+      width: 100%;
+      /* Full size for the remote video */
+      height: 100%;
+      /* Full height for the remote video */
+      object-fit: cover;
+      /* Cover the video area */
+    }
+
+    #localVideo {
+      width: 30%;
+      /* Smaller size for the local video */
+      height: 30%;
+      /* Smaller size for the local video */
+      right: 10px;
+      /* Positioning it on the right */
+      bottom: 10px;
+      /* Positioning it on the bottom */
+      border: 2px solid #fff;
+      /* Optional border */
+      z-index: 1;
+      /* Ensure it appears above the remote video */
+    }
+
+    button {
+      margin: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Video Call App</h1>
+  <button id="startCall">Start Call</button>
+  <button id="stopCall" disabled>Stop Call</button>
+  <div id="videoContainer">
+    <video id="remoteVideo" autoplay></video>
+    <video id="localVideo" autoplay muted></video>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    let localStream;
+    let peerConnection;
+    const room = 'testRoom'; // Use a room name of your choice
+    socket.emit('join', room);
+
+    // Function to start the call
+    document.getElementById('startCall').onclick = async () => {
+      try {
+        // Request video and audio
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+
+        peerConnection = new RTCPeerConnection();
+
+        // Ensure localStream is defined before adding tracks
+        if (localStream) {
+          localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        } else {
+          console.error('Local stream is not available.');
+        }
+
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit('candidate', { candidate: event.candidate, room });
+          }
+        };
+
+        peerConnection.ontrack = (event) => {
+          remoteVideo.srcObject = event.streams[0];
+        };
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('offer', { offer, room });
+
+        // Enable the stop call button
+        document.getElementById('stopCall').disabled = false;
+      } catch (error) {
+        console.error('Error accessing media devices.', error);
+      }
+    };
+
+    // Function to stop the call
+    document.getElementById('stopCall').onclick = () => {
+      // Close the peer connection and stop the local stream
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+
+      localVideo.srcObject = null;
+      remoteVideo.srcObject = null;
+
+      // Disable the stop call button
+      document.getElementById('stopCall').disabled = true;
+    };
+
+    // Handle incoming offer
+    socket.on('offer', async (offer) => {
+      peerConnection = new RTCPeerConnection();
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      if (localStream) {
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+      }
+
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.emit('answer', { answer, room });
+
+      // Enable the stop call button
+      document.getElementById('stopCall').disabled = false;
+    });
+
+    // Handle incoming answer
+    socket.on('answer', (answer) => {
+      peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    // Handle incoming ICE candidates
+    socket.on('candidate', (candidate) => {
+      peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+  </script>
+</body>
+
+</html>
