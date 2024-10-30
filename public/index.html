@@ -4,32 +4,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Call</title>
+  <title>Video Call with Quality Metrics</title>
   <style>
+    /* General page styling */
     body {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       height: 100vh;
-      background-color: #f0f0f0;
+      margin: 0;
+      background-color: #e9ecef;
+      font-family: Arial, sans-serif;
+      color: #333;
     }
 
     h1 {
+      font-size: 1.8em;
+      color: #444;
       margin-bottom: 20px;
     }
 
+    /* Video container styling */
     #videoContainer {
       position: relative;
       width: 80%;
       max-width: 800px;
       height: 450px;
       background-color: #000;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
     }
 
     video {
       position: absolute;
-      border: 1px solid #ccc;
       border-radius: 5px;
     }
 
@@ -40,36 +49,83 @@
     }
 
     #localVideo {
-      width: 30%;
-      height: 30%;
+      width: 25%;
+      height: 25%;
       position: absolute;
       right: 15px;
       bottom: 15px;
-      border: 2px solid #fff;
+      border: 3px solid #fff;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
       z-index: 1;
     }
 
+    /* Button styling */
     button {
+      padding: 10px 20px;
       margin: 10px;
+      border: none;
+      border-radius: 8px;
+      background-color: #007bff;
+      color: #fff;
+      font-size: 1em;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      box-shadow: 0 4px 8px rgba(0, 123, 255, 0.2);
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Call quality display styling */
+    #callQuality {
+      margin-top: 15px;
+      font-size: 1em;
+      color: #555;
+      text-align: center;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      #videoContainer {
+        height: 300px;
+      }
+
+      #localVideo {
+        width: 30%;
+        height: 30%;
+      }
     }
   </style>
 </head>
 
 <body>
-  <h1>Video Call App</h1>
+  <h1>Video Call with Quality Metrics</h1>
   <button id="startCall">Start Call</button>
   <button id="stopCall" disabled>Stop Call</button>
   <div id="videoContainer">
     <video id="remoteVideo" autoplay></video>
     <video id="localVideo" autoplay muted></video>
   </div>
+  <div id="callQuality">Call Quality: <span id="qualityMetrics">N/A</span></div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script>
+    // JavaScript logic remains unchanged
     const socket = io();
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
+    const qualityMetrics = document.getElementById('qualityMetrics');
     let localStream;
     let peerConnection;
+    let statsInterval;
 
     const room = 'testRoom';
     socket.emit('join', room);
@@ -96,6 +152,7 @@
         await peerConnection.setLocalDescription(offer);
         socket.emit('offer', { offer, room });
 
+        statsInterval = setInterval(() => updateQualityMetrics(peerConnection), 1000);
         document.getElementById('stopCall').disabled = false;
       } catch (error) {
         console.error('Error accessing media devices.', error);
@@ -112,6 +169,8 @@
       }
       localVideo.srcObject = null;
       remoteVideo.srcObject = null;
+      clearInterval(statsInterval);
+      qualityMetrics.textContent = 'N/A';
       document.getElementById('stopCall').disabled = true;
     };
 
@@ -123,6 +182,8 @@
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       socket.emit('answer', { answer, room });
+
+      statsInterval = setInterval(() => updateQualityMetrics(peerConnection), 1000);
       document.getElementById('stopCall').disabled = false;
     });
 
@@ -133,6 +194,26 @@
     socket.on('candidate', (candidate) => {
       peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     });
+
+    async function updateQualityMetrics(pc) {
+      if (!pc) return;
+
+      const stats = await pc.getStats();
+      let resolution, bitrate, packetLoss;
+
+      stats.forEach(report => {
+        if (report.type === 'inbound-rtp' && report.kind === 'video') {
+          bitrate = (report.bytesReceived * 8 / (report.timestamp / 1000)).toFixed(2) + ' kbps';
+          packetLoss = report.packetsLost;
+        }
+
+        if (report.type === 'track' && report.frameWidth) {
+          resolution = `${report.frameWidth}x${report.frameHeight}`;
+        }
+      });
+
+      qualityMetrics.textContent = `Resolution: ${resolution || 'N/A'}, Bitrate: ${bitrate || 'N/A'}, Packet Loss: ${packetLoss || 'N/A'}`;
+    }
   </script>
 </body>
 
