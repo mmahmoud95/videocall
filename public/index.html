@@ -132,7 +132,10 @@
 
     document.getElementById('startCall').onclick = async () => {
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: true
+        });
         localVideo.srcObject = localStream;
 
         peerConnection = new RTCPeerConnection();
